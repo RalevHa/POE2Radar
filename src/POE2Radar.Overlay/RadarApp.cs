@@ -279,7 +279,7 @@ public sealed class RadarApp : IDisposable
         _process = process;
         _reader = reader;
         _settings = RadarSettings.Load();
-        _autoFlask = _settings.AutoFlaskEnabled;   // restore the persisted F8 state (default ON)
+        _autoFlask = _settings.AutoFlaskEnabled;   // restore the persisted F8 state (default OFF)
         Console.WriteLine($"Settings: {RadarSettings.FilePath}");
         Console.WriteLine($"Entity names: {EntityNameResolver.Shared.Count} mappings; zones: {ZoneGuide.Shared.Count}");
         _live = new Poe2Live(reader, gameStateSlot);
