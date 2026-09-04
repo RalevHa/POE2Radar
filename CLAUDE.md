@@ -90,7 +90,10 @@ valid VitalStruct in the component; the per-patch re-validation for the auto-fla
 each item's slot/rarity/identified/art/stack/components, `--inv N` for one inventory by id, `--itemmods`
 for explicit/implicit mod ids + rolled values; self-validates the drift-prone vec hops) + `--itemdump
 <hexItemAddr>` (deep single-item probe: Mods rarity/identified + per-affix id/value + Mods.dat row scan,
-LocalStats statIndex→value, Sockets contents), `--watch` (area-change logger),
+LocalStats statIndex→value, Sockets contents), `--modcheck` (staleness check for the embedded
+`poe2_mod_stats.json`/`poe2_stat_descriptions.json`: walks every reachable inventory's items, checks each
+affix mod id against `ItemModTranslator`, and lists any unknown ids — the signal that the tables need
+regenerating from an updated RePoE PoE2 export after a content patch), `--watch` (area-change logger),
 `--dump`, `--presence` (walk-stable before/after diff to
 find a buffed scalar), `--devtree` (browser-based live memory/UI/entity explorer at
 `localhost:7778` — `DevTree/DevTreeServer.cs` + `DevTreeHtml.cs`; the PoE2 stand-in for ExileApi's
