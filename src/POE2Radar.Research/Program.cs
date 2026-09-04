@@ -185,6 +185,9 @@ if (HasFlag(args, "--inventory"))
 if (TryGetHexArg(args, "--itemdump") is { } itemAddr)
     return RunItemDump(reader, itemAddr);
 
+if (HasFlag(args, "--modcheck"))
+    return RunModCheck(process, reader);
+
 if (HasFlag(args, "--groundlabels"))
     return RunGroundLabels(process, reader, TryGetIntArg(args, "--delay") ?? 0);
 
@@ -838,6 +841,70 @@ static (int boxX, int boxY, int itemListOff, POE2Radar.Core.Game.StdVector vec, 
         if (h > bestHits) { bestHits = h; bestOff = off; bestVec = v; bestN = (int)(((long)v.Last - (long)v.First) / 8); }
     }
     return bestHits >= 1 ? (boxX, boxY, bestOff, bestVec, bestN) : (boxX, boxY, -1, default, 0);
+}
+
+// ── Staleness check for the embedded item-mod tables (poe2_mod_stats.json / poe2_stat_descriptions.json):
+// walks every non-empty inventory's items and checks each explicit/implicit/enchant mod id against
+// ItemModTranslator.Shared.StatIdsFor. A mod id that resolves to null means the embedded table doesn't
+// know it — usually because it's new since the last content patch and the tables need regenerating from
+// an updated RePoE PoE2 export (see CLAUDE.md). Run this with a full inventory/stash tab of recently
+// dropped items open for the best coverage; it only sees mods on items currently reachable in memory.
+static int RunModCheck(ProcessHandle process, MemoryReader reader)
+{
+    var (_, _, ai, _) = ResolveChain(process, reader);
+    if (ai == 0) { Console.Error.WriteLine("Could not resolve chain (in game?)."); return 1; }
+    var serverData = SafePtr(reader, ai + Poe2.AreaInstance.ServerDataPtr);
+    if (serverData == 0) { Console.Error.WriteLine("ServerData null."); return 1; }
+    var sdStruct = ResolveServerDataStruct(reader, serverData);
+    if (sdStruct == 0) { Console.Error.WriteLine("Could not resolve ServerDataStructure (PlayerServerData vec)."); return 1; }
+    var (invVecOff, invVec, invCount) = FindPlayerInventoriesVec(reader, sdStruct, 0x320);
+    if (invVecOff < 0) { Console.Error.WriteLine("Could not locate PlayerInventories vector."); return 1; }
+
+    var translator = POE2Radar.Core.Game.ItemModTranslator.Shared;
+    Console.WriteLine($"ItemModTranslator loaded: {translator.IsLoaded}  ({translator.ModCount} known mod ids)\n");
+
+    var known = 0; var unknown = new SortedSet<string>(StringComparer.Ordinal);
+    for (long i = 0; i < invCount; i++)
+    {
+        var rec = invVec.First + (nint)(i * 0x18);
+        var invPtr = SafePtr(reader, rec + 0x08);
+        if (invPtr == 0) continue;
+        var (_, _, itemListOff, itemVec, itemCount) = ProbeInventoryStruct(reader, invPtr);
+        if (itemListOff < 0 || itemCount <= 0) continue;
+
+        var seen = new HashSet<nint>();
+        for (var j = 0; j < itemCount; j++)
+        {
+            var iiPtr = SafePtr(reader, itemVec.First + (nint)(j * 8));
+            if (iiPtr == 0) continue;
+            var item = SafePtr(reader, iiPtr + 0x00);
+            if (item == 0 || !seen.Add(item)) continue;
+            if (!ReadEntityMetadata(reader, item).StartsWith("Metadata/Items", StringComparison.Ordinal)) continue;
+            var mods = ResolveComponentAddr(reader, item, "Mods");
+            if (mods == 0) continue;
+            foreach (var off in new[] { Poe2.ModsComponent.ImplicitMods, Poe2.ModsComponent.ExplicitMods, Poe2.ModsComponent.EnchantMods })
+            {
+                if (!reader.TryReadStruct<POE2Radar.Core.Game.StdVector>(mods + off, out var v)) continue;
+                var span = (long)v.Last - (long)v.First;
+                if (v.First == 0 || span <= 0 || span % 0x40 != 0 || span > 0x800) continue;
+                var n = (int)(span / 0x40);
+                for (var k = 0; k < n; k++)
+                {
+                    var arec = v.First + (nint)(k * 0x40);
+                    var row = SafePtr(reader, arec + Poe2.ModsComponent.ModRecordPtr);
+                    var id = ReadModName(reader, row);
+                    if (string.IsNullOrEmpty(id)) continue;
+                    if (translator.StatIdsFor(id) != null) known++; else unknown.Add(id);
+                }
+            }
+        }
+    }
+
+    Console.WriteLine($"Scanned mods: {known} known, {unknown.Count} unknown (distinct).");
+    if (unknown.Count == 0) { Console.WriteLine("No unknown mod ids found — poe2_mod_stats.json looks current for what's reachable."); return 0; }
+    Console.WriteLine("\nUnknown mod ids (missing from poe2_mod_stats.json — likely added in a content patch since the tables were last regenerated):");
+    foreach (var id in unknown) Console.WriteLine($"  {id}");
+    return 0;
 }
 
 static void DumpInventoryItems(MemoryReader reader, nint inv, POE2Radar.Core.Game.StdVector itemVec, int count, bool dumpMods)
