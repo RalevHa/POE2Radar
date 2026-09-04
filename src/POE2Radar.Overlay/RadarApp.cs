@@ -175,6 +175,10 @@ public sealed class RadarApp : IDisposable
     // same reason HP bars re-read per frame).
     private readonly record struct ItemLabelSpec(nint Render, string Name, string Value, bool Highlight, bool ShowName);
     private readonly List<ItemLabel> _itemFrame = new();   // render-thread scratch (rebuilt per frame)
+    // Entity dots lerp from the PREVIOUS world tick's grid pos toward the current one over the gap between
+    // world ticks (~33 ms at WorldHz=30) — otherwise a dot sampled at 30 Hz holds still then snaps every
+    // frame on a >30 Hz monitor. Purely cosmetic math on already-published data, no extra memory reads.
+    private readonly List<Poe2Live.EntityDot> _entityFrame = new();   // render-thread scratch (rebuilt per frame)
     private IReadOnlyList<Poe2Live.Landmark> _landmarks = Array.Empty<Poe2Live.Landmark>(); // world only
     private Poe2Live.TerrainData? _terrain;                 // world only
     private int _charLevel;                                 // world only (published in the snapshot)
@@ -191,12 +195,15 @@ public sealed class RadarApp : IDisposable
         IReadOnlyList<ItemLabelSpec> ItemLabels,
         IReadOnlyList<SelectedPath> SelectedPaths,
         IReadOnlyList<LegendEntry> Legend,
-        IReadOnlyList<string> SelectedSnapshot)
+        IReadOnlyList<string> SelectedSnapshot,
+        DateTime PublishedUtc,
+        IReadOnlyDictionary<uint, NumVec2> PrevGridById)
     {
         public static readonly WorldSnapshot Empty = new(
             false, 0, 0, "", 0, Array.Empty<Poe2Live.EntityDot>(), Array.Empty<Poe2Live.Landmark>(), null,
             Array.Empty<HpBarSpec>(), Array.Empty<ItemLabelSpec>(), Array.Empty<SelectedPath>(),
-            Array.Empty<LegendEntry>(), Array.Empty<string>());
+            Array.Empty<LegendEntry>(), Array.Empty<string>(), DateTime.MinValue,
+            new Dictionary<uint, NumVec2>());
     }
     private volatile WorldSnapshot _world = WorldSnapshot.Empty;
     private NumVec2 _worldPlayer;          // the world tick's current player grid (for off-thread replans)
@@ -214,6 +221,17 @@ public sealed class RadarApp : IDisposable
     //    Flask keys are configurable in RadarSettings (LifeKey/ManaKey). ──
     private bool _autoFlask = true;                        // restored from settings in ctor; toggle with F8
     private DateTime _lifeFiredAt = DateTime.MinValue, _manaFiredAt = DateTime.MinValue;
+    private DateTime _nextLowHpAlertAt = DateTime.MinValue;   // low-HP MessageBeep cooldown (independent of auto-flask)
+    private DateTime _nextRareAlertAt = DateTime.MinValue;    // rare/unique proximity MessageBeep cooldown (global, not per-monster)
+
+    // ── Session loot value tracker (world thread only). A ground item is counted as "picked up" when its
+    // entity id, previously priced and present, no longer appears in the current tick's entity walk.
+    // ponytail: this can't distinguish a pickup from the item aging out of the AwakeEntities discovery
+    // radius (walking away) — upgrade path is a real pickup/inventory-delta signal if that proves noisy. ──
+    private double _sessionLootValueEx;
+    private Dictionary<uint, double> _lastGroundItemValueById = new();
+    private uint _lootTrackerAreaHash;
+    private bool _lootTrackerAreaSeen;
     private DateTime _nextToggleAt = DateTime.MinValue;
     private DateTime _nextPathKeyAt = DateTime.MinValue;
     private DateTime _nextBrowserAt = DateTime.MinValue;
@@ -1185,7 +1203,18 @@ public sealed class RadarApp : IDisposable
         // snapshot's area hash matches the live one; otherwise draw none this frame (player blip + map still
         // draw). The API still serves the latest snapshot regardless (no visual artifact there).
         var worldFresh = inGame && snap.InGame && snap.AreaHash == _areaHash;
-        var entities = worldFresh ? snap.Entities : Array.Empty<Poe2Live.EntityDot>();
+        IReadOnlyList<Poe2Live.EntityDot> entities;
+        if (worldFresh && snap.Entities.Count > 0)
+        {
+            var t = (float)Math.Clamp((DateTime.UtcNow - snap.PublishedUtc).TotalSeconds / (1.0 / WorldHz), 0.0, 1.0);
+            _entityFrame.Clear();
+            foreach (var e in snap.Entities)
+                _entityFrame.Add(t < 1f && snap.PrevGridById.TryGetValue(e.Id, out var prevGrid)
+                    ? e with { Grid = NumVec2.Lerp(prevGrid, e.Grid, t) }
+                    : e);
+            entities = _entityFrame;
+        }
+        else entities = worldFresh ? snap.Entities : Array.Empty<Poe2Live.EntityDot>();
         var landmarks = worldFresh ? snap.Landmarks : Array.Empty<Poe2Live.Landmark>();
         var terrain = worldFresh ? snap.Terrain : null;
         var selectedPaths = worldFresh ? snap.SelectedPaths : Array.Empty<SelectedPath>();
@@ -1197,10 +1226,14 @@ public sealed class RadarApp : IDisposable
         var monoliths = worldFresh && mr.AreaHash == _areaHash
             ? mr.Markers : (IReadOnlyList<MonolithMarker>)Array.Empty<MonolithMarker>();
 
+        // ponytail: _sessionLootValueEx is written by the world thread and read here unsynchronized — a
+        // display-only accumulator, so a torn/stale read for one frame is harmless; upgrade to Interlocked
+        // (via a long bit-cast) if that ever stops being true.
         _state = new RadarState(inGame, snap.AreaHash, snap.AreaLevel, map.IsVisible, map.Zoom, player,
             snap.Entities, snap.Landmarks, _hpPct, _manaPct, _esPct, _autoFlask, _flaskNote,
             snap.AreaCode, _charName, snap.CharLevel, _worldMs, _renderMs, mr.Markers, _fps,
-            ex.Open, ex.Summary, ex.Offered, ex.Wanted, ex.HaveQty, ex.FillNote);
+            ex.Open, ex.Summary, ex.Offered, ex.Wanted, ex.HaveQty, ex.FillNote,
+            _sessionLootValueEx, _priceBook.Format(_sessionLootValueEx));
 
         var realActive = _gameHwnd != 0 && GetForegroundWindow() == _gameHwnd;
         // "Always show" draws the overlay even when PoE2 isn't focused (for dashboard calibration).
@@ -1352,6 +1385,8 @@ public sealed class RadarApp : IDisposable
         // Accumulate any newly-seen monster mod ids into the persistent catalog (debounced write)
         // so the dashboard rule editor can offer them and they survive restarts / new content.
         _modCatalog.Observe(_entities);
+        CheckRareAlert(player);
+        TrackLootValue(areaHash);
         // If the user edited the custom landmark patterns, drop the cached per-area scan so it
         // rebuilds with the new patterns this tick (otherwise it only refreshes on zone change).
         if (_landmarkPatterns.Generation != _landmarkGen)
@@ -1453,9 +1488,21 @@ public sealed class RadarApp : IDisposable
         _selectedSnapshot = SnapshotSelection();
         _legend = BuildLegend(_selectedSnapshot);
 
-        // Publish the whole immutable world snapshot atomically for the render thread.
+        // Publish the whole immutable world snapshot atomically for the render thread. PrevGridById is
+        // this thread's own OUTGOING snapshot's positions — captured before overwrite, since this thread is
+        // the sole writer of _world — so the render thread can lerp toward the new grid pos across the gap
+        // between world ticks instead of holding mobs still then snapping (jitter at high refresh rates).
+        var prevGridById = BuildGridById(_world.Entities);
         _world = new WorldSnapshot(true, areaHash, areaLevel, areaCode, _charLevel,
-            _entities, _landmarks, _terrain, hpSpecs, itemLabels, _selectedPaths, _legend, _selectedSnapshot);
+            _entities, _landmarks, _terrain, hpSpecs, itemLabels, _selectedPaths, _legend, _selectedSnapshot,
+            DateTime.UtcNow, prevGridById);
+    }
+
+    private static IReadOnlyDictionary<uint, NumVec2> BuildGridById(IReadOnlyList<Poe2Live.EntityDot> entities)
+    {
+        var map = new Dictionary<uint, NumVec2>(entities.Count);
+        foreach (var e in entities) map[e.Id] = e.Grid;
+        return map;
     }
 
     /// <summary>
@@ -1627,6 +1674,55 @@ public sealed class RadarApp : IDisposable
         return labels;
     }
 
+    /// <summary>Rare/unique proximity alert (world rate): beep once (global cooldown, not per-monster) when
+    /// a hostile monster at or above <see cref="RadarSettings.RareAlertMinRarity"/> is within
+    /// <see cref="RadarSettings.RareAlertRadius"/> grid units of the player.</summary>
+    private void CheckRareAlert(NumVec2 player)
+    {
+        if (!_settings.RareAlertEnabled || DateTime.UtcNow < _nextRareAlertAt) return;
+        var minRarity = string.Equals(_settings.RareAlertMinRarity, "Unique", StringComparison.OrdinalIgnoreCase)
+            ? Poe2Live.Rarity.Unique : Poe2Live.Rarity.Rare;
+        var radiusSq = _settings.RareAlertRadius * _settings.RareAlertRadius;
+        foreach (var e in _entities)
+        {
+            if (e.Category != Poe2Live.EntityCategory.Monster || e.Rarity < minRarity || e.IsFriendly || e.HpCur <= 0) continue;
+            if ((e.Grid - player).LengthSquared() > radiusSq) continue;
+            _nextRareAlertAt = DateTime.UtcNow.AddMilliseconds(_settings.RareAlertCooldownMs);
+            OverlayNative.MessageBeep(OverlayNative.MB_ICONEXCLAMATION);
+            break;
+        }
+    }
+
+    /// <summary>Session loot value tracker (world rate): diffs this tick's priced ground items against the
+    /// last tick's by entity id — an id that was priced and present but has now vanished is counted as
+    /// picked up, and its value is added to the running session total. Resets the tracked set (not the
+    /// total) on area change, since leaving a zone isn't a pickup.</summary>
+    private void TrackLootValue(uint areaHash)
+    {
+        if (!_settings.LootValueTrackerEnabled) return;
+        if (!_lootTrackerAreaSeen || areaHash != _lootTrackerAreaHash)
+        {
+            _lootTrackerAreaHash = areaHash;
+            _lootTrackerAreaSeen = true;
+            _lastGroundItemValueById = new Dictionary<uint, double>();
+        }
+        var current = new Dictionary<uint, double>();
+        if (_priceBook.IsLoaded)
+        {
+            foreach (var e in _entities)
+            {
+                if (e.ItemArt is not { Length: > 0 } && e.ItemName is not { Length: > 0 }) continue;
+                var isUnique = e.Rarity == Poe2Live.Rarity.Unique;
+                var lookup = isUnique ? _priceBook.TryByArt(e.ItemArt)
+                                      : (e.ItemName is { Length: > 0 } nm ? _priceBook.TryByName(nm) : null);
+                if (lookup is { } pr) current[e.Id] = pr.Exalted;
+            }
+        }
+        foreach (var (id, value) in _lastGroundItemValueById)
+            if (!current.ContainsKey(id)) _sessionLootValueEx += value;
+        _lastGroundItemValueById = current;
+    }
+
     /// <summary>Map a PriceBook category (the poe.ninja overview TYPE string — "Currency", "UniqueWeapons",
     /// "SoulCores", …) to the user-facing ground-item GROUP key (<see cref="GroundItemSettings.Categories"/>).
     /// The unique sub-types collapse to "Uniques"; the rest pass through. (Earlier this switched on poe2scout's
@@ -1703,6 +1799,15 @@ public sealed class RadarApp : IDisposable
             return;
         }
         _hpPct = v.HpPct; _manaPct = v.ManaPct; _esPct = v.EsPct;
+
+        // Low-HP audio alert: independent of auto-flask, so it still warns you with F8'd off / auto-flask
+        // disabled entirely. Cooldown-gated so it beeps once, not every frame, while HP stays under water.
+        if (_settings.LowHpAlertEnabled && v.HpPct < _settings.LowHpAlertThresholdPct
+            && DateTime.UtcNow >= _nextLowHpAlertAt)
+        {
+            _nextLowHpAlertAt = DateTime.UtcNow.AddMilliseconds(_settings.LowHpAlertCooldownMs);
+            OverlayNative.MessageBeep(OverlayNative.MB_ICONEXCLAMATION);
+        }
 
         if (!_autoFlask) { _flaskNote = "OFF (F8)"; return; }
         if (GetForegroundWindow() != _gameHwnd) { _flaskNote = "paused (PoE2 not focused)"; return; }

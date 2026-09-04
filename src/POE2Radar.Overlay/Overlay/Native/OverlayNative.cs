@@ -177,6 +177,13 @@ internal static partial class OverlayNative
     /// <summary>True iff the given hwnd is the OS-level foreground window.</summary>
     public static bool IsForeground(nint hwnd) => hwnd != 0 && GetForegroundWindow() == hwnd;
 
+    /// <summary>Win32 MessageBeep — plays the OS "Exclamation" sound scheme asynchronously (does not
+    /// block the calling thread). Used for the low-HP audio alert.</summary>
+    [LibraryImport("user32.dll", EntryPoint = "MessageBeep")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool MessageBeep(uint uType);
+    public const uint MB_ICONEXCLAMATION = 0x00000030;
+
     /// <summary>Find the main visible window belonging to the given process ID.</summary>
     public static nint FindWindowForProcess(int processId)
     {
