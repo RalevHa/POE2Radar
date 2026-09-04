@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.InteropServices;
 
 namespace POE2Radar.Overlay.Native;
@@ -178,11 +179,39 @@ internal static partial class OverlayNative
     public static bool IsForeground(nint hwnd) => hwnd != 0 && GetForegroundWindow() == hwnd;
 
     /// <summary>Win32 MessageBeep — plays the OS "Exclamation" sound scheme asynchronously (does not
-    /// block the calling thread). Used for the low-HP audio alert.</summary>
+    /// block the calling thread). Fallback alert sound when no custom .wav is configured.</summary>
     [LibraryImport("user32.dll", EntryPoint = "MessageBeep")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool MessageBeep(uint uType);
     public const uint MB_ICONEXCLAMATION = 0x00000030;
+
+    /// <summary>Win32 PlaySound (winmm.dll) — plays a .wav file asynchronously. SND_FILENAME|SND_ASYNC|
+    /// SND_NODEFAULT: pszSound is a path, doesn't block, and plays nothing (no fallback ding) if the file
+    /// can't be found/decoded — the caller falls back to MessageBeep itself in that case.</summary>
+    [LibraryImport("winmm.dll", EntryPoint = "PlaySoundW", StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool PlaySound(string pszSound, nint hmod, uint fdwSound);
+    public const uint SND_FILENAME = 0x00020000, SND_ASYNC = 0x00000001, SND_NODEFAULT = 0x00000002;
+
+    /// <summary>Win32 waveOutSetVolume — sets THIS PROCESS's wave-out volume (Vista+ routes wave audio
+    /// per-process through the Volume Mixer under WASAPI-shared mode, so this does not touch system/master
+    /// volume or other apps). hwo=0 targets the default output device's mapper for the current process.</summary>
+    [LibraryImport("winmm.dll")]
+    public static partial int waveOutSetVolume(nint hwo, uint dwVolume);
+
+    /// <summary>Plays a custom .wav (async, non-blocking) at <paramref name="volume"/> (0..1) when
+    /// <paramref name="soundPath"/> is a valid file; else falls back to the default MessageBeep — a
+    /// missing/mistyped path degrades quietly instead of silently not alerting at all.</summary>
+    public static void PlayAlert(string? soundPath, float volume)
+    {
+        if (soundPath is { Length: > 0 } && File.Exists(soundPath))
+        {
+            var v = (ushort)(System.Math.Clamp(volume, 0f, 1f) * 0xFFFF);
+            waveOutSetVolume(0, (uint)v | ((uint)v << 16));
+            if (PlaySound(soundPath, 0, SND_FILENAME | SND_ASYNC | SND_NODEFAULT)) return;
+        }
+        MessageBeep(MB_ICONEXCLAMATION);
+    }
 
     /// <summary>Find the main visible window belonging to the given process ID.</summary>
     public static nint FindWindowForProcess(int processId)

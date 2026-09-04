@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using POE2Radar.Core.Game;
 using POE2Radar.Overlay.Config;
+using POE2Radar.Overlay.Native;
 
 namespace POE2Radar.Overlay.Web;
 
@@ -261,6 +262,24 @@ public sealed class ApiServer : IDisposable
                 break;
             }
 
+            case "/api/test-sound":
+            {
+                // Plays the CURRENTLY CONFIGURED alert sound (custom .wav + volume, or the fallback beep)
+                // immediately, so the dashboard can preview it without waiting for a real low-HP/rare-monster
+                // trigger. Same CSRF / DNS-rebinding guard as the other writes; this only plays local audio,
+                // never touches the game.
+                if (ctx.Request.HttpMethod != "POST") { Write(ctx, 405, JsonSerializer.Serialize(new { error = "method not allowed" }, Json)); break; }
+                if (!IsLoopbackHost(ctx.Request)) { Write(ctx, 403, JsonSerializer.Serialize(new { error = "forbidden host" }, Json)); break; }
+                using (var doc = JsonDocument.Parse(ReadBody(ctx) is { Length: > 0 } b ? b : "{}"))
+                {
+                    var which = doc.RootElement.TryGetProperty("which", out var w) ? w.GetString() : null;
+                    if (which == "rare") OverlayNative.PlayAlert(_settings.RareAlertSoundPath, _settings.RareAlertVolume);
+                    else OverlayNative.PlayAlert(_settings.LowHpAlertSoundPath, _settings.LowHpAlertVolume);
+                }
+                Write(ctx, 200, JsonSerializer.Serialize(new { ok = true }, Json));
+                break;
+            }
+
             case "/api/nav":
             {
                 if (ctx.Request.HttpMethod == "GET")
@@ -513,6 +532,17 @@ public sealed class ApiServer : IDisposable
         atlasContentIconSize = _settings.AtlasContentIconSize,
         atlasRouteArrowSpacing = _settings.AtlasRouteArrowSpacing,
         atlasGroups = _settings.AtlasGroups,
+        lowHpAlertEnabled = _settings.LowHpAlertEnabled,
+        lowHpAlertThresholdPct = _settings.LowHpAlertThresholdPct,
+        lowHpAlertCooldownMs = _settings.LowHpAlertCooldownMs,
+        lowHpAlertSoundPath = _settings.LowHpAlertSoundPath,
+        lowHpAlertVolume = _settings.LowHpAlertVolume,
+        rareAlertEnabled = _settings.RareAlertEnabled,
+        rareAlertMinRarity = _settings.RareAlertMinRarity,
+        rareAlertRadius = _settings.RareAlertRadius,
+        rareAlertCooldownMs = _settings.RareAlertCooldownMs,
+        rareAlertSoundPath = _settings.RareAlertSoundPath,
+        rareAlertVolume = _settings.RareAlertVolume,
     };
 
     /// <summary>Apply only whitelisted radar/visual keys from a posted JSON object; persists on change.</summary>
@@ -560,6 +590,20 @@ public sealed class ApiServer : IDisposable
                 case "atlasShowContentIcons" when TryBool(p.Value, out var b): _settings.AtlasShowContentIcons = b; applied.Add(p.Name); break;
                 case "atlasContentIconSize" when TryFloat(p.Value, out var f): _settings.AtlasContentIconSize = Math.Clamp(f, 12f, 64f); applied.Add(p.Name); break;
                 case "atlasRouteArrowSpacing" when TryFloat(p.Value, out var f): _settings.AtlasRouteArrowSpacing = Math.Clamp(f, 1.5f, 18f); applied.Add(p.Name); break;
+                case "lowHpAlertEnabled" when TryBool(p.Value, out var b): _settings.LowHpAlertEnabled = b; applied.Add(p.Name); break;
+                case "lowHpAlertThresholdPct" when TryFloat(p.Value, out var f): _settings.LowHpAlertThresholdPct = Math.Clamp(f, 0f, 100f); applied.Add(p.Name); break;
+                case "lowHpAlertCooldownMs" when TryInt(p.Value, out var n): _settings.LowHpAlertCooldownMs = Math.Clamp(n, 0, 60000); applied.Add(p.Name); break;
+                case "lowHpAlertSoundPath" when p.Value.ValueKind is JsonValueKind.String or JsonValueKind.Null:
+                    _settings.LowHpAlertSoundPath = p.Value.GetString() ?? ""; applied.Add(p.Name); break;
+                case "lowHpAlertVolume" when TryFloat(p.Value, out var f): _settings.LowHpAlertVolume = Math.Clamp(f, 0f, 1f); applied.Add(p.Name); break;
+                case "rareAlertEnabled" when TryBool(p.Value, out var b): _settings.RareAlertEnabled = b; applied.Add(p.Name); break;
+                case "rareAlertMinRarity" when p.Value.ValueKind == JsonValueKind.String && p.Value.GetString() is { } rm
+                    && (rm is "Rare" or "Unique"): _settings.RareAlertMinRarity = rm; applied.Add(p.Name); break;
+                case "rareAlertRadius" when TryFloat(p.Value, out var f): _settings.RareAlertRadius = Math.Clamp(f, 1f, 1000f); applied.Add(p.Name); break;
+                case "rareAlertCooldownMs" when TryInt(p.Value, out var n): _settings.RareAlertCooldownMs = Math.Clamp(n, 0, 60000); applied.Add(p.Name); break;
+                case "rareAlertSoundPath" when p.Value.ValueKind is JsonValueKind.String or JsonValueKind.Null:
+                    _settings.RareAlertSoundPath = p.Value.GetString() ?? ""; applied.Add(p.Name); break;
+                case "rareAlertVolume" when TryFloat(p.Value, out var f): _settings.RareAlertVolume = Math.Clamp(f, 0f, 1f); applied.Add(p.Name); break;
                 // Whole-object writes (the dashboard re-POSTs the full sub-object on edit). Parsed,
                 // sanitized/clamped, then swapped in. A malformed sub-object is skipped, not fatal.
                 case "styles" when p.Value.ValueKind == JsonValueKind.Object:

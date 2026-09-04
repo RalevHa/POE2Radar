@@ -183,6 +183,10 @@ public sealed class RadarSettings
     public bool LowHpAlertEnabled { get; set; } = true;
     public float LowHpAlertThresholdPct { get; set; } = 30f;
     public int LowHpAlertCooldownMs { get; set; } = 5000;
+    // Custom .wav path (absolute); empty = the default MessageBeep. Any other format (mp3, etc.) is not
+    // supported — Win32 PlaySound only decodes .wav.
+    public string LowHpAlertSoundPath { get; set; } = "";
+    public float LowHpAlertVolume { get; set; } = 1f;   // 0..1, custom sound only (not the fallback beep)
 
     // ── Rare/unique proximity alert (MessageBeep) — fires when a hostile monster at or above
     //    RareAlertMinRarity ("Rare" or "Unique") comes within RareAlertRadius grid units of the player.
@@ -191,6 +195,9 @@ public sealed class RadarSettings
     public string RareAlertMinRarity { get; set; } = "Rare";
     public float RareAlertRadius { get; set; } = 60f;
     public int RareAlertCooldownMs { get; set; } = 8000;
+    // Custom .wav path (absolute); empty = the default MessageBeep.
+    public string RareAlertSoundPath { get; set; } = "";
+    public float RareAlertVolume { get; set; } = 1f;   // 0..1, custom sound only (not the fallback beep)
 
     // ── Session loot value tracker — sums the priced value of ground items that disappear from the
     //    entity walk (picked up or despawned) while identified/priced. Resets on area change. ──
