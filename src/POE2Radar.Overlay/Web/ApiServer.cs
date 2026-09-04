@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading;
 using POE2Radar.Core.Game;
 using POE2Radar.Overlay.Config;
 using POE2Radar.Overlay.Native;
@@ -277,6 +278,29 @@ public sealed class ApiServer : IDisposable
                     else OverlayNative.PlayAlert(_settings.LowHpAlertSoundPath, _settings.LowHpAlertVolume);
                 }
                 Write(ctx, 200, JsonSerializer.Serialize(new { ok = true }, Json));
+                break;
+            }
+
+            case "/api/pick-file":
+            {
+                // Shows the NATIVE Windows "Open File" dialog (filtered to .wav) and returns the chosen
+                // absolute path — a browser <input type=file> can't hand back a real filesystem path, but
+                // this dashboard is served by our own desktop process, which can. The dialog call blocks
+                // for as long as the user takes to pick, so it runs on its OWN thread (STA — required by
+                // the shell's common-dialog machinery) rather than the shared HTTP accept-loop thread:
+                // Handle() returns immediately after spawning it, so /state polling etc. keep working while
+                // the dialog is open. Same CSRF / DNS-rebinding guard as the other writes.
+                if (ctx.Request.HttpMethod != "POST") { Write(ctx, 405, JsonSerializer.Serialize(new { error = "method not allowed" }, Json)); break; }
+                if (!IsLoopbackHost(ctx.Request)) { Write(ctx, 403, JsonSerializer.Serialize(new { error = "forbidden host" }, Json)); break; }
+                var picker = new Thread(() =>
+                {
+                    string? path = null;
+                    try { path = OverlayNative.PickWavFile(); } catch { /* dialog failed — report cancel */ }
+                    TryWrite(ctx, 200, JsonSerializer.Serialize(new { path }, Json));
+                });
+                picker.SetApartmentState(ApartmentState.STA);
+                picker.IsBackground = true;
+                picker.Start();
                 break;
             }
 

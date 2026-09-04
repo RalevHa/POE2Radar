@@ -652,7 +652,10 @@ internal static class DashboardHtml
             <div class="row"><div class="rl">Cooldown<small>min ms between beeps</small></div>
               <input class="numin" type="number" step="500" min="0" data-set="lowHpAlertCooldownMs"></div>
             <div class="row"><div class="rl">Custom sound (.wav)<small>absolute path; blank = default beep</small></div>
-              <input class="numin" type="text" placeholder="C:\sounds\lowhp.wav" data-set="lowHpAlertSoundPath"></div>
+              <div style="display:flex;gap:6px">
+                <input class="numin" type="text" style="width:150px" placeholder="C:\sounds\lowhp.wav" id="lowHpSoundIn" data-set="lowHpAlertSoundPath">
+                <button class="actbtn" style="padding:6px 10px" onclick="pickSoundFile('lowHpSoundIn')">&hellip;</button>
+              </div></div>
             <div class="row"><div class="rl">Volume</div>
               <input class="numin" type="range" min="0" max="1" step="0.05" data-set="lowHpAlertVolume"></div>
             <div class="row"><div class="rl"></div><button class="actbtn" onclick="testSound('lowhp')">&#9658; Test sound</button></div>
@@ -671,7 +674,10 @@ internal static class DashboardHtml
             <div class="row"><div class="rl">Cooldown<small>min ms between beeps</small></div>
               <input class="numin" type="number" step="500" min="0" data-set="rareAlertCooldownMs"></div>
             <div class="row"><div class="rl">Custom sound (.wav)<small>absolute path; blank = default beep</small></div>
-              <input class="numin" type="text" placeholder="C:\sounds\rare.wav" data-set="rareAlertSoundPath"></div>
+              <div style="display:flex;gap:6px">
+                <input class="numin" type="text" style="width:150px" placeholder="C:\sounds\rare.wav" id="rareSoundIn" data-set="rareAlertSoundPath">
+                <button class="actbtn" style="padding:6px 10px" onclick="pickSoundFile('rareSoundIn')">&hellip;</button>
+              </div></div>
             <div class="row"><div class="rl">Volume</div>
               <input class="numin" type="range" min="0" max="1" step="0.05" data-set="rareAlertVolume"></div>
             <div class="row"><div class="rl"></div><button class="actbtn" onclick="testSound('rare')">&#9658; Test sound</button></div>
@@ -929,6 +935,17 @@ async function saveSetting(key,val){
 }
 async function testSound(which){
   try{ await fetch('/api/test-sound',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({which})}); }catch(e){}
+}
+// Opens the NATIVE Windows file picker (server-side — a browser <input type=file> can't hand back a
+// real filesystem path) filtered to .wav, fills the given input, and saves it like a normal edit.
+async function pickSoundFile(inputId){
+  const el = document.getElementById(inputId);
+  if(!el) return;
+  try{
+    const r = await fetch('/api/pick-file',{method:'POST'});
+    const j = await r.json();
+    if(j.path){ el.value = j.path; saveSetting(el.dataset.set, j.path); }
+  }catch(e){}
 }
 function wireSettings(){
   $$('[data-set]').forEach(el=>{
