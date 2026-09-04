@@ -22,12 +22,16 @@ internal static class DashboardHtml
   :root{
     --bg:#0a0907; --bg2:#100d09; --panel:#15110b; --panel2:#1b1610;
     --line:#3a2f1d; --line-soft:#271f14;
-    --ink:#e8dcc2; --ink-dim:#9c8e72; --ink-faint:#6b5f49;
+    /* ink-dim/ink-faint brightened from the original #9c8e72/#6b5f49 — both sat below WCAG AA
+       (4.5:1) against --panel; this pass targets ~4.6:1 / ~3.3:1 so secondary/tertiary text
+       stays legible without flattening the intentional dim/faint hierarchy. */
+    --ink:#e8dcc2; --ink-dim:#b0a184; --ink-faint:#8a7c60;
     --gold:#c8a049; --gold-bright:#ecca7e; --gold-deep:#8a6d34;
     --blood:#9c342a; --blood-bright:#d6584a;
     --rare:#f1e36b; --magic:#7f93ff; --unique:#d2641e; --normal:#cdc6b4;
     --good:#79b06a; --poi:#4bb3c4;
     --shadow:0 18px 40px -20px rgba(0,0,0,.9);
+    --focus:0 0 0 2px var(--bg), 0 0 0 4px var(--gold-bright), 0 0 14px -2px rgba(236,202,126,.7);
   }
   *{box-sizing:border-box}
   html,body{height:100%}
@@ -37,10 +41,18 @@ internal static class DashboardHtml
       var(--bg);
     color:var(--ink);
     font-family:"IBM Plex Mono","Consolas",ui-monospace,monospace;
-    font-size:13px; line-height:1.5;
+    font-size:14px; line-height:1.6;
     -webkit-font-smoothing:antialiased;
     overflow:hidden;
   }
+  /* One visible keyboard-focus treatment, reused everywhere (buttons, tabs, chips, switches,
+     inputs) — a gold glow matching the theme's own accent, since :focus{outline:none} was being
+     set ad hoc on individual inputs with nothing to replace it on the rest of the controls. */
+  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
+  .tab:focus-visible, .chip:focus-visible, .sw:focus-within, [tabindex]:focus-visible{
+    outline:none; box-shadow:var(--focus); border-radius:2px;
+  }
+  @media (prefers-reduced-motion: reduce){ *{ animation-duration:.001ms !important; transition-duration:.001ms !important } }
   /* grain + vignette atmosphere */
   body::before{
     content:""; position:fixed; inset:0; pointer-events:none; z-index:999;
@@ -100,8 +112,8 @@ internal static class DashboardHtml
   .sect{font-family:"Cinzel","Georgia",serif; font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:var(--gold); margin:24px 0 12px; display:flex; align-items:center; gap:10px}
   .sect::after{content:""; flex:1; height:1px; background:linear-gradient(90deg,var(--line),transparent)}
 
-  .kv{display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px dotted var(--line-soft); font-size:12px}
-  .kv span:first-child{color:var(--ink-faint); letter-spacing:.04em}
+  .kv{display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dotted var(--line-soft); font-size:12.5px}
+  .kv span:first-child{color:var(--ink-dim)}
   .kv span:last-child{color:var(--ink); font-weight:500}
 
   .tally{display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:4px}
@@ -200,8 +212,8 @@ internal static class DashboardHtml
   .card h3 .tag{color:var(--ink-faint); font-size:10px; letter-spacing:.1em}
   .row{display:flex; align-items:center; justify-content:space-between; gap:16px; padding:11px 0; border-bottom:1px dotted var(--line-soft)}
   .row:last-child{border-bottom:none}
-  .row .rl{font-size:12px; color:var(--ink); min-width:0}
-  .row .rl small{display:block; color:var(--ink-faint); font-size:10px; letter-spacing:.03em; margin-top:3px; line-height:1.4}
+  .row .rl{font-size:12.5px; color:var(--ink); min-width:0}
+  .row .rl small{display:block; color:var(--ink-dim); font-size:11px; margin-top:3px; line-height:1.45}
   .sw{position:relative; width:44px; height:23px; flex:none; cursor:pointer; display:inline-block}
   .sw input{opacity:0; width:0; height:0; position:absolute}
   .sw .track{position:absolute; inset:0; background:#0c0a07; border:1px solid var(--line); border-radius:12px; transition:.2s}
@@ -211,7 +223,10 @@ internal static class DashboardHtml
   .numin{font-family:inherit; font-size:12px; color:var(--ink); background:#0c0a07; border:1px solid var(--line); border-radius:2px; padding:6px 9px; width:96px; text-align:right}
   .numin:focus{outline:none; border-color:var(--gold-deep)}
   .ro{color:var(--gold-bright); font-family:"Cinzel","Georgia",serif; font-size:14px}
-  .hint-row{color:var(--ink-faint)!important; font-size:11px!important; font-style:italic}
+  /* Was italic + --ink-faint + 11px — fine for a one-line caption, hard going for the multi-
+     sentence explainer paragraphs this class is also used for (Rules/Landmarks tabs). Dropped the
+     italic and moved up to --ink-dim + a touch more size/line-height instead of shrinking further. */
+  .hint-row{color:var(--ink-dim)!important; font-size:11.5px!important; line-height:1.55}
   .saved{font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--good); opacity:0; transition:opacity .3s}
   .saved.show{opacity:1}
 
@@ -223,7 +238,8 @@ internal static class DashboardHtml
   .stylerow .sw .knob{width:13px; height:13px}
   .stylerow .sw input:checked ~ .knob{transform:translateX(18px)}
   input[type=color]{width:30px; height:24px; padding:0; border:1px solid var(--line); background:#0c0a07; border-radius:2px; cursor:pointer; flex:none}
-  input[type=range].op{width:78px; accent-color:var(--gold); flex:none}
+  input[type=range]{accent-color:var(--gold)}
+  input[type=range].op{width:78px; flex:none}
   .opv{font-size:10px; color:var(--ink-faint); width:30px; text-align:right}
   .numin.sz{width:56px}
   .mechrow{border:1px solid var(--line-soft); border-radius:3px; background:var(--panel2); padding:10px 12px; margin-bottom:8px}
@@ -328,6 +344,10 @@ internal static class DashboardHtml
   .ipop-cell .cn{font-size:7px; line-height:1; color:var(--ink-faint); max-width:36px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .delbtn:hover{border-color:var(--blood-bright)}
   .addbtn{font-family:"Cinzel","Georgia",serif; font-size:11px; letter-spacing:.1em; color:var(--gold-bright); background:transparent; border:1px dashed var(--gold-deep); border-radius:3px; padding:8px 14px; cursor:pointer; width:100%; margin-top:4px}
+  /* One-off ACTION button (run this now) — a solid border, unlike .addbtn's dashed "+ create new
+     item" affordance, so the two don't get visually confused (e.g. "Test sound" vs "+ Add rule"). */
+  .actbtn{font-family:"Cinzel","Georgia",serif; font-size:11px; letter-spacing:.1em; color:var(--bg); background:var(--gold-deep); border:1px solid var(--gold); border-radius:3px; padding:8px 16px; cursor:pointer}
+  .actbtn:hover{background:var(--gold)}
   .addbtn:hover{background:rgba(200,160,73,.07)}
 
   /* ── dashboard nav list ── */
@@ -623,6 +643,39 @@ internal static class DashboardHtml
               <input class="numin" type="number" step="100" min="0" data-set="manaCooldownMs"></div>
             <div class="row"><div class="rl hint-row">F8 toggles auto-flask in-game. Status: <span id="flaskState">&mdash;</span></div></div>
           </div>
+          <div class="card">
+            <h3>Low-HP Alert</h3>
+            <div class="row"><div class="rl">Enabled</div>
+              <label class="sw"><input type="checkbox" data-set="lowHpAlertEnabled"><span class="track"></span><span class="knob"></span></label></div>
+            <div class="row"><div class="rl">Threshold %<small>beep when Life drops below this</small></div>
+              <input class="numin" type="number" step="1" min="0" max="100" data-set="lowHpAlertThresholdPct"></div>
+            <div class="row"><div class="rl">Cooldown<small>min ms between beeps</small></div>
+              <input class="numin" type="number" step="500" min="0" data-set="lowHpAlertCooldownMs"></div>
+            <div class="row"><div class="rl">Custom sound (.wav)<small>absolute path; blank = default beep</small></div>
+              <input class="numin" type="text" placeholder="C:\sounds\lowhp.wav" data-set="lowHpAlertSoundPath"></div>
+            <div class="row"><div class="rl">Volume</div>
+              <input class="numin" type="range" min="0" max="1" step="0.05" data-set="lowHpAlertVolume"></div>
+            <div class="row"><div class="rl"></div><button class="actbtn" onclick="testSound('lowhp')">&#9658; Test sound</button></div>
+          </div>
+          <div class="card">
+            <h3>Rare/Unique Alert</h3>
+            <div class="row"><div class="rl">Enabled</div>
+              <label class="sw"><input type="checkbox" data-set="rareAlertEnabled"><span class="track"></span><span class="knob"></span></label></div>
+            <div class="row"><div class="rl">Minimum rarity</div>
+              <select class="numin selin" data-set="rareAlertMinRarity">
+                <option value="Rare">Rare or higher</option>
+                <option value="Unique">Unique only</option>
+              </select></div>
+            <div class="row"><div class="rl">Radius<small>grid units from the player</small></div>
+              <input class="numin" type="number" step="5" min="1" data-set="rareAlertRadius"></div>
+            <div class="row"><div class="rl">Cooldown<small>min ms between beeps</small></div>
+              <input class="numin" type="number" step="500" min="0" data-set="rareAlertCooldownMs"></div>
+            <div class="row"><div class="rl">Custom sound (.wav)<small>absolute path; blank = default beep</small></div>
+              <input class="numin" type="text" placeholder="C:\sounds\rare.wav" data-set="rareAlertSoundPath"></div>
+            <div class="row"><div class="rl">Volume</div>
+              <input class="numin" type="range" min="0" max="1" step="0.05" data-set="rareAlertVolume"></div>
+            <div class="row"><div class="rl"></div><button class="actbtn" onclick="testSound('rare')">&#9658; Test sound</button></div>
+          </div>
         </div>
         <div style="margin-top:18px; height:14px"><span class="saved" id="savedMsg">&#10003; saved to config</span></div>
       </section>
@@ -874,12 +927,16 @@ async function saveSetting(key,val){
     $$('.saved').forEach(m=>{ m.classList.add('show'); clearTimeout(m._t); m._t=setTimeout(()=>m.classList.remove('show'),1100); });
   }catch(e){}
 }
+async function testSound(which){
+  try{ await fetch('/api/test-sound',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({which})}); }catch(e){}
+}
 function wireSettings(){
   $$('[data-set]').forEach(el=>{
     const k=el.dataset.set;
     if(el.type==='checkbox') el.onchange=()=>saveSetting(k,el.checked);
     else if(el.classList.contains('keyin')) el.onchange=()=>{ const vk=charToVk(el.value); if(vk) saveSetting(k,vk); el.value=vkToChar(vk); };
     else if(el.tagName==='SELECT') el.onchange=()=>saveSetting(k,el.value); // string value (e.g. flask mode)
+    else if(el.type==='text') el.onchange=()=>saveSetting(k,el.value.trim()); // string value (e.g. a sound file path)
     else el.onchange=()=>{ const v=parseFloat(el.value); if(!isNaN(v)) saveSetting(k,v); };
   });
 }

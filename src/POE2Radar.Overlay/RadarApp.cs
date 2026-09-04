@@ -1,3 +1,4 @@
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using NumVec2 = System.Numerics.Vector2;
@@ -1688,7 +1689,7 @@ public sealed class RadarApp : IDisposable
             if (e.Category != Poe2Live.EntityCategory.Monster || e.Rarity < minRarity || e.IsFriendly || e.HpCur <= 0) continue;
             if ((e.Grid - player).LengthSquared() > radiusSq) continue;
             _nextRareAlertAt = DateTime.UtcNow.AddMilliseconds(_settings.RareAlertCooldownMs);
-            OverlayNative.MessageBeep(OverlayNative.MB_ICONEXCLAMATION);
+            OverlayNative.PlayAlert(_settings.RareAlertSoundPath, _settings.RareAlertVolume);
             break;
         }
     }
@@ -1806,7 +1807,7 @@ public sealed class RadarApp : IDisposable
             && DateTime.UtcNow >= _nextLowHpAlertAt)
         {
             _nextLowHpAlertAt = DateTime.UtcNow.AddMilliseconds(_settings.LowHpAlertCooldownMs);
-            OverlayNative.MessageBeep(OverlayNative.MB_ICONEXCLAMATION);
+            OverlayNative.PlayAlert(_settings.LowHpAlertSoundPath, _settings.LowHpAlertVolume);
         }
 
         if (!_autoFlask) { _flaskNote = "OFF (F8)"; return; }
