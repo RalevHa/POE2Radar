@@ -1,5 +1,6 @@
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace POE2Radar.Overlay.Native;
 
@@ -211,6 +212,62 @@ internal static partial class OverlayNative
             if (PlaySound(soundPath, 0, SND_FILENAME | SND_ASYNC | SND_NODEFAULT)) return;
         }
         MessageBeep(MB_ICONEXCLAMATION);
+    }
+
+    // ── Native "Open File" dialog (comdlg32) for picking a custom alert .wav from the dashboard.
+    // Classic [DllImport] rather than [LibraryImport] here — OPENFILENAMEW's lpstrFile is an
+    // IN/OUT fixed buffer the dialog writes the chosen path into, which the legacy marshaller
+    // handles via StringBuilder; LibraryImport's source-gen marshalling doesn't support that. ──
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct OPENFILENAME
+    {
+        public int lStructSize;
+        public nint hwndOwner;
+        public nint hInstance;
+        public string? lpstrFilter;
+        public string? lpstrCustomFilter;
+        public int nMaxCustFilter;
+        public int nFilterIndex;
+        public StringBuilder lpstrFile;
+        public int nMaxFile;
+        public string? lpstrFileTitle;
+        public int nMaxFileTitle;
+        public string? lpstrInitialDir;
+        public string? lpstrTitle;
+        public int Flags;
+        public short nFileOffset;
+        public short nFileExtension;
+        public string? lpstrDefExt;
+        public nint lCustData;
+        public nint lpfnHook;
+        public string? lpTemplateName;
+        public nint pvReserved;
+        public int dwReserved;
+        public int FlagsEx;
+    }
+
+    [DllImport("comdlg32.dll", EntryPoint = "GetOpenFileNameW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool GetOpenFileNameW(ref OPENFILENAME ofn);
+
+    private const int OFN_FILEMUSTEXIST = 0x00001000, OFN_PATHMUSTEXIST = 0x00000800, OFN_EXPLORER = 0x00080000;
+
+    /// <summary>Shows the native Windows "Open File" dialog filtered to .wav, blocking the CALLING
+    /// thread until the user picks or cancels. Callers must run this off any thread that needs to
+    /// stay responsive (e.g. a dedicated STA thread) — see ApiServer's /api/pick-file handler.
+    /// Returns the chosen absolute path, or null if the user canceled.</summary>
+    public static string? PickWavFile()
+    {
+        var buffer = new StringBuilder(260);
+        var ofn = new OPENFILENAME
+        {
+            lpstrFilter = "WAV files (*.wav)\0*.wav\0All files (*.*)\0*.*\0\0",
+            lpstrFile = buffer,
+            nMaxFile = buffer.Capacity,
+            lpstrTitle = "Choose an alert sound",
+            Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER,
+        };
+        ofn.lStructSize = Marshal.SizeOf<OPENFILENAME>();
+        return GetOpenFileNameW(ref ofn) ? buffer.ToString() : null;
     }
 
     /// <summary>Find the main visible window belonging to the given process ID.</summary>
