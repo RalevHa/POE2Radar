@@ -156,10 +156,11 @@ public sealed class RadarSettings
     // user who deletes the rule keeps it gone. Fresh configs get them via DisplayRules.BuildDefault.
     public bool BuiltInTileRulesSeeded { get; set; }
 
-    // ── Auto-flask master enable (the F8 in-game kill-switch persists here so a disabled state survives
-    //    a restart). Defaults ON to preserve the historical "auto-on each launch" behavior. NOTE: this is
-    //    deliberately NOT writable via the HTTP API — automation is only ever armed from the local F8 key. ──
-    public bool AutoFlaskEnabled { get; set; } = true;
+    // ── Auto-flask master enable (the F8 in-game kill-switch persists here so an enabled/disabled state
+    //    survives a restart). Defaults OFF — auto-flask must be armed explicitly via F8 each fresh config.
+    //    NOTE: this is deliberately NOT writable via the HTTP API — automation is only ever armed from the
+    //    local F8 key. ──
+    public bool AutoFlaskEnabled { get; set; }
 
     // ── Auto-flask thresholds + per-flask cooldowns (milliseconds). ──
     // What the (single) life-flask key triggers on: "Health" watches HP% only (default — unchanged
