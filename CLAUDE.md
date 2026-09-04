@@ -130,7 +130,9 @@ is rescaled by liveZoom/calibZoom each frame. See `resources/atlas-research-note
   `+0x00`, Slot `+0x08`. Item = Entity; Mods rarity `+0x94`/identified `+0x90`, affix vecs Implicit `+0xA0`/
   Explicit `+0xB8`/Enchant `+0xD0` (ModArrayStruct stride `0x40`, `+0x28` → Mods.dat row → first qword →
   UTF-16 internal mod id); Stack count `+0x18`; RenderItem art `+0x28`.
-- **Still TBD:** camera world→screen matrix (for world-space nameplates); friendly area Name string.
+- **Still TBD:** camera world→screen matrix (for world-space nameplates). Friendly area name is solved —
+  `Game/ZoneGuide.cs` resolves `AreaCode` → display name from an embedded `world_areas.json` table, no
+  memory read needed; served as `areaName` in `/state` and `/landmarks`.
 
 ## Releasing
 

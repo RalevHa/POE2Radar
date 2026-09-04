@@ -158,6 +158,7 @@ public sealed class ApiServer : IDisposable
                     landmarkCount = s.Landmarks.Count,
                     counts,
                     worldMs = s.WorldMs, renderMs = s.RenderMs, fps = s.Fps,
+                    sessionLootValueEx = s.SessionLootValueEx, sessionLootValueText = s.SessionLootValueText,
                     // Runeshape monoliths in the area (slot count + anchor + priced reward set) for the
                     // dashboard's Monolith Rewards card. Rewards are pre-sorted by value, server-side.
                     monoliths = (s.Monoliths ?? Array.Empty<MonolithMarker>()).Select(m => new
@@ -1059,7 +1060,11 @@ public sealed record RadarState(
     IReadOnlyList<ExchangeRow>? ExchangeOffered = null,
     IReadOnlyList<ExchangeRow>? ExchangeWanted = null,
     int ExchangeHaveQty = 0,
-    string ExchangeFillNote = "")
+    string ExchangeFillNote = "",
+    // Session loot value tracker: running total (Exalted) of ground items that disappeared from the
+    // entity walk while priced — see RadarApp.TrackLootValue. Persists across zones, resets on restart.
+    double SessionLootValueEx = 0,
+    string SessionLootValueText = "")
 {
     public static readonly RadarState Empty =
         new(false, 0, 0, false, 0, System.Numerics.Vector2.Zero,

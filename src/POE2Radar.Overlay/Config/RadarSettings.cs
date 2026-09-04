@@ -177,6 +177,25 @@ public sealed class RadarSettings
     public int LifeKey { get; set; } = 0x31;
     public int ManaKey { get; set; } = 0x32;
 
+    // ── Low-HP audio alert (MessageBeep) — independent of auto-flask (works even with it off/F8'd
+    //    since vitals are read every render tick regardless). Cooldown prevents beep-spam while HP
+    //    stays under the threshold. ──
+    public bool LowHpAlertEnabled { get; set; } = true;
+    public float LowHpAlertThresholdPct { get; set; } = 30f;
+    public int LowHpAlertCooldownMs { get; set; } = 5000;
+
+    // ── Rare/unique proximity alert (MessageBeep) — fires when a hostile monster at or above
+    //    RareAlertMinRarity ("Rare" or "Unique") comes within RareAlertRadius grid units of the player.
+    //    Global cooldown (not per-monster) keeps a pack of rares from spamming beeps. ──
+    public bool RareAlertEnabled { get; set; } = true;
+    public string RareAlertMinRarity { get; set; } = "Rare";
+    public float RareAlertRadius { get; set; } = 60f;
+    public int RareAlertCooldownMs { get; set; } = 8000;
+
+    // ── Session loot value tracker — sums the priced value of ground items that disappear from the
+    //    entity walk (picked up or despawned) while identified/priced. Resets on area change. ──
+    public bool LootValueTrackerEnabled { get; set; } = true;
+
     // ── HTTP API. ──
     public int ApiPort { get; set; } = 7777;
 
