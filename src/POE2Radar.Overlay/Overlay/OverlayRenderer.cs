@@ -108,7 +108,7 @@ public sealed class OverlayRenderer : IDisposable
                 DrawAtlas(rt, ctx);                        // tracked-map rings + off-screen arrows
                 _legendRowRects.Clear();
             }
-            else if (ctx.Active && ctx.InGame)
+            else if (ctx.Active && ctx.InGame && !ZoneGuide.Shared.IsHideoutOrTown(ctx.AreaCode))
             {
                 DrawNameplates(rt, ctx);                   // world-space HP bars over hostile mobs
                 DrawItemLabels(rt, ctx);                   // priced unique drops over their loot icons
@@ -120,6 +120,13 @@ public sealed class OverlayRenderer : IDisposable
                 // The navigation-menu widget is ALWAYS interactive in-game (map open or not). It
                 // (re)builds _legendRowRects, so it must run last; nothing else touches those rects now.
                 DrawNavMenu(rt, ctx);
+            }
+            // Town/hideout: no monsters/loot/terrain worth tracking. Skip the combat-radar layer (dots,
+            // terrain, HP bars, nav menu) entirely — the panel/tooltip layer below (currency exchange,
+            // rune/ritual rewards, hover price) still runs, since those ARE used in town/hideout.
+            else if (ctx.Active && ctx.InGame)
+            {
+                _legendRowRects.Clear(); // no stale click rects from the nav menu
             }
             else
             {

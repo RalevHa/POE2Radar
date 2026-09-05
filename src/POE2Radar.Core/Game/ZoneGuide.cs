@@ -97,6 +97,15 @@ public sealed class ZoneGuide
     public string ActLabel(string areaCode)
         => Area(areaCode) is { Act: > 0 } a ? $"Act {a.Act}" : "";
 
+    /// <summary>True for a real town (<see cref="ZoneArea.Town"/>) or a hideout — nothing for the combat
+    /// radar (entity dots, terrain, tile landmarks, monster HP bars) to track in either. Hideouts carry
+    /// <c>town: false</c> in world_areas.json (only actual towns set it), so they're recognized instead
+    /// by an area-code substring: every hideout code observed (personal, guild, or map-device-unlocked)
+    /// contains "Hideout" — verified against all 88 world_areas.json entries whose NAME contains
+    /// "Hideout" with zero mismatch either direction.</summary>
+    public bool IsHideoutOrTown(string areaCode)
+        => Area(areaCode) is { Town: true } || areaCode.Contains("Hideout", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// Leveling notes for an area: the zone-specific note if present, else the act-level note.
     /// Returns a title ("Act N — Name") + the note text, or null if nothing is known for the area.
