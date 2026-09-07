@@ -304,7 +304,10 @@ public sealed class PriceBook
                 if (string.IsNullOrWhiteSpace(ln.Name) || ln.PrimaryValue <= 0) continue;
                 var ex = ln.PrimaryValue * rate;
                 var item = new PricedItem(ln.Name.Trim(), ex, ln.ListingCount ?? 0, type);
-                Upsert(byName, Normalize(ln.Name), item);
+                // Same name can carry several rows (corrupted/high-roll variants) — prefer the most-traded
+                // one, same tie-break as byArt below, so a name lookup doesn't land on a rare mislisted
+                // outlier while the art lookup for the identical item lands on the common variant.
+                Upsert(byName, Normalize(ln.Name), item, preferVolume: true);
                 var art = ArtBasenameFromIcon(ln.Icon);
                 if (art != null) Upsert(byArt, art, item, preferVolume: true);
             }
